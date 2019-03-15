@@ -11,14 +11,14 @@ def Haarcascade( frame):
     face_cascade = cv2.CascadeClassifier('haarcascade_frontface.xml')
     body_cascade = cv2.CascadeClassifier('haarcascade_fullbody.xml')
     faces = face_cascade.detectMultiScale(gray,1.3,5)
-    bodies = body_cascade.detectMultiScale(gray,1.1,5)
+    bodies = body_cascade.detectMultiScale(gray,1.03,5)
     return faces,bodies
     
 #cap = cv2.VideoCapture(0,cv2.CAP_DSHOW)
 
 #while(1):
 #ret,frame = cap.read()
-frame = cv2.imread("test1.jpg",cv2.IMREAD_COLOR)
+frame = cv2.imread("test.jpg",cv2.IMREAD_COLOR)
 gray = np.zeros(frame.shape)
 gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
 #processing
