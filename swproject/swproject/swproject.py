@@ -11,17 +11,26 @@ def Haarcascade( frame):
     face_cascade = cv2.CascadeClassifier('haarcascade_frontface.xml')
     body_cascade = cv2.CascadeClassifier('haarcascade_upperbody.xml')
     faces = face_cascade.detectMultiScale(gray,1.3,5)
-    bodies = body_cascade.detectMultiScale(gray,1.1,5)
+    bodies = body_cascade.detectMultiScale(gray,1.03,5)
     return faces,bodies
     
 cap = cv2.VideoCapture(0,cv2.CAP_DSHOW)
 
+<<<<<<< HEAD
 while(1):
     ret,frame = cap.read()
     #frame = cv2.imread("test1.jpg",cv2.IMREAD_COLOR)
     gray = np.zeros(frame.shape)
     gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
     #processing
+=======
+#while(1):
+#ret,frame = cap.read()
+frame = cv2.imread("test.jpg",cv2.IMREAD_COLOR)
+gray = np.zeros(frame.shape)
+gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+#processing
+>>>>>>> 8c67efc67b12d578d8346cf855093976d2bd2926
 
     ###HoG###
     #rects = HogDescriptor(gray)
@@ -35,8 +44,16 @@ while(1):
     for (x,y,w,h) in bodies:
         cv2.rectangle(frame,(x,y),(x+w,y+h),(0,255,0),2)
 
+<<<<<<< HEAD
     cv2.imshow("captured",frame)
     if cv2.waitKey(1) == 99:
         break
     #cv2.waitKey(0)
 cv2.destroyAllWindows()
+=======
+cv2.imshow("captured",frame)
+cv2.waitKey(0)
+#if cv2.waitKey(1) == 99:
+#    break
+#cv2.destroyAllWindows()
+>>>>>>> 8c67efc67b12d578d8346cf855093976d2bd2926
