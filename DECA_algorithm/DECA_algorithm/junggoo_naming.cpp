@@ -1,99 +1,105 @@
-#include <cstdio>
-#include <vector>
+#include <stdio.h>
 
-using namespace std;
+int n, m, pos;
+unsigned char board[2010 * 2010];
+unsigned char name[5000];
 
-int n, m;
-vector<char> board(2000*2000,0);
-
-int same(int *a, int *b, char prev) {
-	char min = prev;
-	int ym = *a, xm = *b, flag = 1, miny, minx;
-	int t = 1;
-	while (flag) {
-		if (ym + 1 < n)ym++;
-		if (xm + 1 < m)xm++;
-		t++;
-
-		for (int y = *a; y <= ym; ++y) {
-			if (xm + y == t) {
-				if (board[y * m + xm] < min) {
-					min = board[y * m + xm];
-					miny = y;
-					minx = xm;
+void bfs(int y, int x) {
+	while (1) {
+		if (y == n - 1 && x == m - 1) {
+			name[pos++] = board[m*(n - 1) + (m - 1)];
+			return;
+		}
+		name[pos++] = board[y*m + x];
+		if (y + 1 >= n) {
+			x += 1;
+			continue;
+		}
+		else if (x + 1 >= m) {
+			y += 1;
+			continue;
+		}
+		else if (board[(y + 1) * m + x] < board[y * m + (x + 1)]) {
+			y += 1;
+			continue;
+		}
+		else if (board[(y + 1) * m + x] > board[y * m + (x + 1)]) {
+			x += 1;
+			continue;
+		}
+		else {
+			int flag = 1, miny, minx, t = 1, min_cnt = 0;
+			unsigned char tmp = board[y * m + x + 1], min;
+			while (flag) {
+				min = 255;
+				t += 1;
+				name[pos++] = tmp;
+				min_cnt = 0;
+				for (int a = 0; a <= t; ++a) {
+					int b = t - a;
+					if (y + a < n && x + b < m) {
+						if (board[(y + a) * m + (x + b)] < min) { // <= min ÀÌ¸י run time??
+							min = board[(y + a) * m + (x + b)];
+							miny = y + a;
+							minx = x + b;
+						}
+					}
+				}
+				for (int a = 0; a <= t; ++a) {
+					int b = t - a;
+					if (y + a < n && x + b < m) {
+						if (board[(y + a) * m + (x + b)] == min) min_cnt++;
+					}
+				}
+				if (min_cnt > 1) {
+					tmp = min;
+				}
+				else if(min_cnt == 1) {
+					flag = 0;
+					y = miny, x = minx;
+				}
+				else if (t + y >= n && t + x >= m) {
+					y = n - 1, x = m - 1;
+					flag = 0;
 				}
 			}
 		}
-		for (int x = *b; x < xm; ++x) {
-			if (ym + x == t) {
-				if (board[ym * m + x] < min) {
-					min = board[ym * m + x];
-					miny = ym;
-					minx = x;
-				}
-			}
-		}
-		if (min < prev) flag = 0;
-		if (ym == n - 1 && xm == m - 1) {
-			*a = n - 1, *b = m - 1;
-			return -1;
-		}
 	}
-	*a = miny, *b = minx;
-	return 0;
-}
-int bfs(vector<char> *name, int y, int x) {
-	(*name).push_back(board[y*m + x]);
-
-	if (y == n - 1 && x == m - 1) {
-		return 0;
-	}
-
-	if (y + 1 >= n) {
-		bfs(name, y, x + 1);
-	}
-	else if (x + 1 >= m) {
-		bfs(name, y + 1, x);
-	}
-	else if (board[(y + 1)*m + x] < board[y*m + (x + 1)]) {
-		bfs(name, y + 1, x);
-	}
-	else if (board[(y + 1)*m + x] > board[y*m + (x + 1)]) {
-		bfs(name, y, x + 1);
-	}
-	else {
-		int a = y, b = x;
-		char tmp;
-		if (x + 1 < m)tmp = board[y*m + x + 1];
-		else if (y + 1 < n)tmp = board[(y + 1)*m + x];
-
-		same(&a, &b, tmp);
-
-		for (int i = 0; i < (a - y + b - x - 1); ++i) {
-			(*name).push_back(tmp);
-		}
-		bfs(name, a, b);
-	}
+	return;
 }
 
 int main() {
 	int T = 0;
 	scanf("%d", &T);
 	for (int t = 0; t < T; ++t) {
-		vector<char> name;
+		pos = 0;
+		//n = 2000, m = 2000;
 		scanf("%d %d", &n, &m);
 		getchar();
+		//getchar();
 		for (int y = 0; y < n; ++y) {
 			for (int x = 0; x < m; ++x) {
-				scanf("%c", &board[y*m+x]);
+				board[y * m + x] = getchar();
 			}
 			getchar();
+			//getchar();
 		}
-		bfs(&name, 0, 0);
+		bfs(0, 0);
 		printf("#%d ", t + 1);
-		for (int i = 0; i < name.size(); ++i) {
+		for (int i = 0; i < pos; ++i) {
 			printf("%c", name[i]);
+			name[i] = 0;
 		}
 		printf("\n");
 	}
 }
+/*
+1
+5 5
+adddb
+dadbb
+ddadd
+dbdad
+dddda
+
+*/

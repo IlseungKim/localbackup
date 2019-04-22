@@ -1,29 +1,23 @@
 // mm_wave.cpp : 콘솔 응용 프로그램에 대한 진입점을 정의합니다.
 //
+#pragma comment(lib, "libfftw3-3.lib")
+#pragma comment(lib, "winmm.lib")
 #include "stdafx.h"
 #include <iostream>
 #include <conio.h>
 #include <math.h>
 #include <stdlib.h>
+#include <Windows.h>
 #include <stdio.h>
+#include <conio.h>
 #include <string.h>
+#include "fftw3.h"
+#include "Myfilter.h"
 
 using namespace std;
 #define Default_Samplerate 44100
 #define Default_LEN_BUF	44100
 #define nSec  5
-
-#define	MOV_AVG	0
-#define	FIR		1
-#define	IIR		2
-#define	KEY		3
-#define	SPC		4
-#define	SLOC	5
-
-#define	RECT	0
-#define	HANN	1
-#define	HAMM	2
-#define	TRIA	3
 
 #define	LEFT	0
 #define	RIGHT	1
@@ -33,25 +27,183 @@ using namespace std;
 #define	DIS		1	// 음원과의 거리 in m
 #define	Vs		339
 
-#define	NUM_KEYS	3
-#define	PI			3.141592
-
-int iBuf;
-int iplaying;
-unsigned long result;
+unsigned long long result, Samplerate, LEN_BUF;
 short	*in, *out;
-char	filter_on = 0;
+char	filter_on = -1;
 float	fc, *fir_coef, *iir_coefA, *iir_coefB;
-int		MA_tap, fir_tap, w_type, iir_order, cur_key, dir, max_delay, Samplerate, LEN_BUF;
+int		MA_tap, fir_tap, w_type, iir_order, dir, max_delay;
 
-double	key_freq[] = { 262, 330, 392 };
-double	cur_corl, sound_loc;
-char	key_name[][5] = { "도","미","솔" };
+double  sound_loc, phs;
 short	*key_wav;
 short	*aheadL, *aheadR;
 
 enum { NUM_BUF = 8 };
 
+HANDLE hEvent_BufferReady;
+HANDLE hEvent_FinishedPlaying;
+int iBuf;
+int iplaying;
+short *spt;
+HWAVEIN hWaveIn;
+HWAVEOUT hWaveOut;
+WAVEFORMATEX pFormat;
+//enum { NUM_BUF = 8 };
+//WAVEHDR header[NUM_BUF];
+WAVEHDR *header;
+
+DWORD WINAPI RecordingWaitingThread(LPVOID ivalue)
+{
+	while (1) {
+		WaitForSingleObject(hEvent_BufferReady, INFINITE);
+		result = waveInUnprepareHeader(hWaveIn, &header[iBuf], sizeof(WAVEHDR));
+		iplaying = iBuf;
+		memcpy(spt, header[iBuf].lpData, LEN_BUF * sizeof(short));
+		//if (filter_on == MOV_AVG) {
+		//	MovingAverageFilter(spt, out, LEN_BUF, tap);
+		//	//WeightedMovingAverageFilter(spt, out, LEN_BUF, tap);
+		//	//memcpy(spt, out, LEN_BUF * sizeof(short));
+		//}
+		//if (filter_on == FIR) {
+		//	FIR_filter(spt, out, fir_coef, LEN_BUF, fir_tap);
+		//	//memcpy(spt, out, LEN_BUF * sizeof(short));
+		//}
+		if (filter_on == KEY) {
+			Build_Sinewaves(cur_key, out, LEN_BUF);
+			cur_corl = Correlation(spt, out, LEN_BUF, cur_key);
+			printf("현재 음정[%s]와 상관값 : %f\n", key_name[cur_key], cur_corl);
+		}
+
+		memcpy(header[iBuf].lpData, out, LEN_BUF * sizeof(short));
+
+		result = waveOutPrepareHeader(hWaveOut, &header[iplaying], sizeof(WAVEHDR));
+		result = waveOutWrite(hWaveOut, &header[iplaying], sizeof(WAVEHDR)); // play audio
+		++iBuf;
+		if (iBuf == NUM_BUF) iBuf = 0;
+		result = waveInPrepareHeader(hWaveIn, &header[iBuf], sizeof(WAVEHDR));
+		result = waveInAddBuffer(hWaveIn, &header[iBuf], sizeof(WAVEHDR));
+	}
+	return 0;
+}
+DWORD WINAPI PlayingWaitingThread(LPVOID ivalue)
+{
+	while (1) {
+		WaitForSingleObject(hEvent_FinishedPlaying, INFINITE);
+		waveOutUnprepareHeader(hWaveOut, &header[iplaying], sizeof(WAVEHDR));
+	}
+}
+static void CALLBACK waveOutProc(HWAVEOUT hWaveOut, UINT uMsg, DWORD dwInstance, DWORD dwParam1, DWORD
+	dwParam2)
+{
+	if (uMsg != WOM_DONE)
+		return;
+	SetEvent(hEvent_FinishedPlaying);
+}
+void CALLBACK myWaveInProc(HWAVEIN hwi, UINT uMsg, DWORD dwInstance, DWORD dwParam1, DWORD dwParam2)
+{
+	if (uMsg != WIM_DATA)
+		return;
+	SetEvent(hEvent_BufferReady);
+}
+
+int key_check()
+{
+	Samplerate = 16000;
+	LEN_BUF = 4000;
+	spt = new short[LEN_BUF];
+	in = new short[LEN_BUF];
+	out = new short[LEN_BUF];
+	header = new WAVEHDR[LEN_BUF];
+	hEvent_BufferReady = CreateEvent(NULL, FALSE, FALSE, NULL);
+	hEvent_FinishedPlaying = CreateEvent(NULL, FALSE, FALSE, NULL);
+	pFormat.wFormatTag = WAVE_FORMAT_PCM; // simple, uncompressed format
+	pFormat.nChannels = 1; // 1=mono, 2=stereo
+	pFormat.nSamplesPerSec = Samplerate;
+	pFormat.wBitsPerSample = 16; // 16 for high quality, 8 for telephone-grade
+	pFormat.nBlockAlign = pFormat.nChannels*pFormat.wBitsPerSample / 8;
+	pFormat.nAvgBytesPerSec = (pFormat.nSamplesPerSec)*(pFormat.nChannels)*(pFormat.wBitsPerSample) / 8;
+	pFormat.cbSize = 0;
+	short int *pBuf;
+	size_t bpbuff = LEN_BUF;
+	pBuf = new short int[bpbuff * NUM_BUF];
+	result = waveInOpen(&hWaveIn, WAVE_MAPPER, &pFormat, (DWORD_PTR)myWaveInProc, 0L, CALLBACK_FUNCTION);
+	result = waveOutOpen(&hWaveOut, WAVE_MAPPER, &pFormat, (DWORD_PTR)waveOutProc, 0, CALLBACK_FUNCTION);
+	// initialize all headers in the queue
+	for (int i = 0; i < NUM_BUF; i++)
+	{
+		header[i].lpData = (LPSTR)&pBuf[i * bpbuff];
+		header[i].dwBufferLength = bpbuff * sizeof(*pBuf);
+		header[i].dwFlags = 0L;
+		header[i].dwLoops = 0L;
+	}
+	DWORD myThreadID;
+	DWORD myThreadIDPlay;
+	HANDLE hThread;
+	HANDLE hThreadPlay;
+	hThread = CreateThread(NULL, 0, RecordingWaitingThread, NULL, 0, &myThreadID);
+	hThreadPlay = CreateThread(NULL, 0, PlayingWaitingThread, NULL, 0, &myThreadIDPlay);
+	iBuf = 0;
+	waveInPrepareHeader(hWaveIn, &header[iBuf], sizeof(WAVEHDR));
+	waveInAddBuffer(hWaveIn, &header[iBuf], sizeof(WAVEHDR));
+	waveInStart(hWaveIn);
+
+	char key = 'k';
+	do {
+		key = _getch();
+		cur_key = key - '0';
+
+	} while (key != 'e' && key != 'q');
+
+	waveInClose(hWaveIn);
+	waveOutClose(hWaveOut);
+	CloseHandle(hThread);
+	CloseHandle(hThreadPlay);
+	CloseHandle(hEvent_BufferReady);
+	CloseHandle(hEvent_FinishedPlaying);
+	return 0;
+}
+void	Build_Sinewaves(int key_id, short *d, int N)
+{
+	static double phs = 0.;
+	double	div_f;
+	int		div_i;
+	int amplelify = 5000;
+	for (int i = 0; i < N; i++) {
+		d[i] = (short)(amplelify *sin(2 * M_PI * (key_freq[key_id] / Samplerate) * i + phs));
+		//d[i] += (short)(amplelify *sin(2 * M_PI * (key_freq[key_id + 2] / Samplerate) * i + phs));
+	}
+
+	phs = 2 * M_PI*(key_freq[key_id] / Samplerate)*N + phs;
+	div_f = phs / (M_PI * 2);
+	div_i = (int)div_f;
+	phs = phs - div_i * M_PI * 2;
+}
+
+double	Correlation(short *x, short *y, int N, int key_id)
+{
+	int		max_lag, i, j;
+	double	mx, my, sx, sy, corl, max_corl;
+
+	max_lag = Samplerate / key_freq[key_id];
+
+	for (i = 0, max_corl = 0; i < max_lag; i++) { //max_lag : 두 신호의 phase가 어긋나있는 경우를 보상하기위해
+		mx = my = sx = sy = corl = 0.;
+		for (j = 0; j < N - i; j++) {
+			mx += x[j];
+			my += y[j + i];
+			sx += x[j] * x[j];
+			sy += y[j + i] * y[j + i];
+			corl += x[j] * y[j + i];
+		}
+		mx = mx / (N - i);
+		my = my / (N - i);
+		sx = sqrt(sx / (N - i) - mx * mx);
+		sy = sqrt(sy / (N - i) - my * my);
+		corl = (corl / (N - i) - mx * my) / (sx*sy);
+		corl = fabs(corl);
+		max_corl = (corl > max_corl) ? corl : max_corl;
+	}
+	return max_corl;
+}
 void	MovingAverageFilter(short *in, short *out, int N, int tap)
 {
 	int		i, j, M;
@@ -72,7 +224,7 @@ void	Make_Win(float *w, int len, int w_type)
 {
 	int		i;
 
-	for (i = 0; i<len; i++) {
+	for (i = 0; i < len; i++) {
 		if (w_type == RECT)
 			w[i] = 1;
 		if (w_type == HANN)
@@ -80,7 +232,9 @@ void	Make_Win(float *w, int len, int w_type)
 		if (w_type == HAMM)
 			w[i] = 0.54 - 0.46*cos(3.141592*2.*i / (len - 1));
 		if (w_type == TRIA)
-			w[i] = (i<len / 2) ? ((float)i * 2) / len : 2 * (1 - (float)i / len);
+			w[i] = (i < len / 2) ? ((float)i * 2) / len : 2 * (1 - (float)i / len);
+		if (w_type == BLACK)
+			w[i] = 0.42 - 0.5*cos(2 * M_PI*i / (len - 1)) + 0.08*cos(2 * M_PI*i / (len - 1));
 	}
 }
 
@@ -147,48 +301,6 @@ void	IIR_filfter(short *in, short *out, float *A, float *B, int N, int order)
 	}
 }
 
-void	Build_Sinewaves(int key_id, short *d, int N)
-{
-	static double phs = 0.;
-	double	div_f;
-	int		div_i;
-
-	for (int i = 0; i < N; i++)
-		d[i] = (short)(3000 * sin(2 * PI * (key_freq[key_id] / Samplerate) * i + phs));
-
-	phs = 2 * PI*(key_freq[key_id] / Samplerate)*N + phs;
-	div_f = phs / (PI * 2);
-	div_i = (int)div_f;
-	phs = phs - div_i*PI * 2;
-}
-
-double	Correlation(short *x, short *y, int N, int key_id)
-{
-	int		max_lag, i, j;
-	double	mx, my, sx, sy, corl, max_corl;
-
-	max_lag = Samplerate / key_freq[key_id];
-
-	for (i = 0, max_corl = 0; i < max_lag; i++) {
-		mx = my = sx = sy = corl = 0.;
-		for (j = 0; j < N - i; j++) {
-			mx += x[j];
-			my += y[j + i];
-			sx += x[j] * x[j];
-			sy += y[j + i] * y[j + i];
-			corl += x[j] * y[j + i];
-		}
-		mx = mx / (N - i);
-		my = my / (N - i);
-		sx = sqrt(sx / (N - i) - mx*mx);
-		sy = sqrt(sy / (N - i) - my*my);
-		corl = (corl / (N - i) - mx*my) / (sx*sy);
-		corl = fabs(corl);
-		max_corl = (corl > max_corl) ? corl : max_corl;
-	}
-	return max_corl;
-}
-
 void	MakeStereo(short *in, short *out, int N, int dir)
 {
 	for (int i = 0; i < N; i++) {
@@ -237,14 +349,18 @@ void	Rendering(short *in, short *out, int N, double dir)
 
 void	Do_Proc(short *in, short *out, int N)
 {
-	if (filter_on == MOV_AVG) 
+	if (filter_on == MOV_AVG)
 		MovingAverageFilter(in, out, N, MA_tap);
-	else if (filter_on == FIR) 
+	else if (filter_on == FIR)
 		FIR_filter(in, out, fir_coef, N, fir_tap);
-	else if (filter_on == IIR) 
+	else if (filter_on == IIR)
 		IIR_filfter(in, out, iir_coefA, iir_coefB, N, iir_order);
-	else if (filter_on == SLOC) 
+	else if (filter_on == SLOC)
 		Rendering(in, out, N / 2, sound_loc);
+	else if (filter_on == KEY) {
+		key_check();
+	}
+	else return;
 }
 
 void Print_Usage(char *argv)
@@ -288,6 +404,78 @@ int main(int argc, char **argv)
 
 	key = argv[4][0];
 
+	int fft_flag = 0;
+	if (key == 'b') {
+		filter_on = -1;
+		fft_test(in, out, LEN_BUF);
+	}
+	else if (key == 't' || fft_flag) {
+		printf("FFT is selecte\n");
+		fft_flag = 1;
+
+		printf("Enter start freq, end freq : ");
+		unsigned long long start_f = 0, end_f = 0;
+		scanf("%llu %llu", &start_f, &end_f);
+
+		int npoint = 1;
+		while (npoint < LEN_BUF) {
+			npoint *= 2;
+		}
+
+		end_f = end_f > Samplerate ? Samplerate : end_f;
+		start_f = (double)start_f / Samplerate * npoint;
+		end_f = (double)end_f / Samplerate * npoint;
+
+		//warning message pop up when they over boundary
+		fftw_complex *ft_in = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*npoint);
+		fftw_complex *ft_out = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*npoint);
+		fftw_complex *ift_out = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*npoint);
+		fftw_plan plan_forward = fftw_plan_dft_1d(npoint, ft_in, ft_out, FFTW_FORWARD, FFTW_ESTIMATE);
+		fftw_plan plan_backward = fftw_plan_dft_1d(npoint, ft_out, ift_out, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+		for (unsigned long long i = 0; i < LEN_BUF; ++i) {
+			ft_in[i][0] = in[i];
+			ft_in[i][1] = 0;
+		}
+		for (unsigned long long i = LEN_BUF; i < npoint; ++i) {
+			ft_in[i][0] = 0;
+			ft_in[i][1] = 0;
+		}
+
+		fftw_execute(plan_forward);
+
+		for (unsigned long long i = 0; i < start_f; ++i) {
+			ft_out[i][0] = 0;
+			ft_out[i][1] = 0;
+			ft_out[npoint - i - 1][0] = 0;
+			ft_out[npoint - i - 1][1] = 0;
+		}
+
+		for (unsigned long long i = end_f; i < npoint / 2; ++i) {
+			ft_out[i][0] = 0;
+			ft_out[i][1] = 0;
+			ft_out[npoint - i - 1][0] = 0;
+			ft_out[npoint - i - 1][1] = 0;
+		}
+
+		/*FILE *t_debug = fopen("fft.csv", "w");
+		for (unsigned long long i = 0; i < npoint; ++i) {
+			fprintf(t_debug, "%f\n", sqrt(ft_out[i][0] * ft_out[i][0] + ft_out[i][1] * ft_out[i][1]));
+		}
+		fclose(t_debug);*/
+		fftw_execute(plan_backward);
+
+		for (unsigned long long i = 0; i < LEN_BUF; ++i) {
+			out[i] = ift_out[i][0] / npoint;
+		}
+
+		fftw_destroy_plan(plan_forward);
+		fftw_destroy_plan(plan_backward);
+		fftw_free(ft_in);
+		fftw_free(ft_out);
+		fftw_free(ift_out);
+	}
+
 	if (key == 'l') {
 		max_delay = (int)(Samplerate * 2 * HEAD*0.01 / Vs);
 		aheadL = (short *)malloc(sizeof(short)*max_delay);
@@ -311,7 +499,7 @@ int main(int argc, char **argv)
 		fir_coef = (float *)malloc(sizeof(float)*fir_tap);
 		GetFIRcoefs(fir_coef, fc, fir_tap, w_type);
 		printf("(L)PF or (H)PF ");
-		key = getche();
+		key = _getche();
 		if (key == 'H' || key == 'h') {
 			printf("\nHPF selected.\n"); GetHPFcoefs(fir_coef, fir_tap);
 		}
@@ -320,7 +508,7 @@ int main(int argc, char **argv)
 
 		filter_on = FIR;
 	}
-		
+
 	if (key == 'i') {
 		printf("IIR filter is selected..\n");
 		printf("Enter order : "); scanf("%d", &iir_order);
@@ -339,8 +527,18 @@ int main(int argc, char **argv)
 		printf("Sound localization is selected.\n");
 		printf("Enter sound location (angle, in degree) ");
 		scanf("%lf", &sound_loc);
-		sound_loc = sound_loc * PI / 180;
+		sound_loc = sound_loc * M_PI / 180;
 		filter_on = SLOC;
+	}
+
+	if (key == 'k') {
+		filter_on = 0;
+		printf("\n음정연습\n");
+		printf("키를 입력하세요 :");
+		for (int i = 0; i < NUM_KEYS; ++i)printf("%s(%d) ", key_name[i], i);
+		printf("...\n");
+		scanf("%d", &cur_key);
+		filter_on = KEY;
 	}
 
 	Do_Proc(in, out, LEN_BUF);

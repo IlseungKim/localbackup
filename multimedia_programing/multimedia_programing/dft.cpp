@@ -36,7 +36,7 @@ void dft(COMPLEX *Datain, COMPLEX *Dataout, int N)
 
 void dft(COMPLEX *Datain, COMPLEX *Dataout, int N)
 {
-    int i,k,n,p;
+    unsigned long long i,k,n,p;
     static int nstore = 0;      /* store N for future use */
     static COMPLEX *cf;         /* coefficient storage */
     COMPLEX *cfptr,*Dinptr;
@@ -101,7 +101,7 @@ It returns nothing.
 
 void idft(COMPLEX *Datain, COMPLEX *Dataout, int N)
 {
-    int i,k,n,p;
+    unsigned long long i,k,n,p;
     static int nstore = 0;      /* store N for future use */
     static COMPLEX *cf;         /* coefficient storage */
     COMPLEX *cfptr,*Dinptr;
@@ -173,7 +173,7 @@ void fft(COMPLEX *x, int m)
     COMPLEX u,temp,tm;
     COMPLEX *xi,*xip,*xj,*wptr;
 
-    int i,j,k,l,le,windex;
+    unsigned int i,j,k,l,le,windex;
 
     double arg,w_real,w_imag,wrecur_real,wrecur_imag,wtemp_real;
 
@@ -295,7 +295,7 @@ void ifft(COMPLEX *x, int m)
     COMPLEX u,temp,tm;
     COMPLEX *xi,*xip,*xj,*wptr;
 
-    int i,j,k,l,le,windex;
+    unsigned int i,j,k,l,le,windex;
 
     double arg,w_real,w_imag,wrecur_real,wrecur_imag,wtemp_real;
     float scale;

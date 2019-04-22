@@ -38,13 +38,13 @@
     <ClCompile Include="Mbuffer.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\Desktop\강의\4학년-2학기\멀티미디어 프로그래밍\mm_wave\mm_wave.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="fft.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="dft.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="mm_wave.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
