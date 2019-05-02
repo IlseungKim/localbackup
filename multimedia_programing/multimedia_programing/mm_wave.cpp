@@ -70,7 +70,12 @@ DWORD WINAPI RecordingWaitingThread(LPVOID ivalue)
 		if (filter_on == KEY) {
 			Build_Sinewaves(cur_key, out, LEN_BUF);
 			cur_corl = Correlation(spt, out, LEN_BUF, cur_key);
-			printf("현재 음정[%s]와 상관값 : %f\n", key_name[cur_key], cur_corl);
+			if (har) {
+				printf("현재 음정[%s] [%s] [%s]와 상관값 : %f\n", key_name[cur_key],key_name[cur_key+2], key_name[cur_key+4], cur_corl);
+			}
+			else {
+				printf("현재 음정[%s]와 상관값 : %f\n", key_name[cur_key % 7], cur_corl);
+			}
 		}
 
 		memcpy(header[iBuf].lpData, out, LEN_BUF * sizeof(short));
@@ -148,9 +153,31 @@ int key_check()
 
 	char key = 'k';
 	do {
-		key = _getch();
+		key = _getch();	
 		cur_key = key - '0';
-
+	
+		if (key == 'h') {
+			scanf("%d", &cur_key);
+			printf("화음 모드: %s %s %s\n",key_name[cur_key], key_name[cur_key + 2], key_name[cur_key + 4]);
+			har = 1;
+		}
+		else if (key == 'n') {
+			scanf("%d", &cur_key);
+			printf("화음 제거\n");
+			har = 0;
+		}
+		else {
+			if (cur_key >= NUM_KEYS) {
+				freq = key_freq[cur_key % 7] * pow(2, cur_key / 7);
+			}
+			else if (cur_key < 0) {
+				freq = key_freq[cur_key % 7] * pow(0.5, cur_key / 7);
+			}
+			else {
+				freq = key_freq[cur_key];
+			}
+		}
+		
 	} while (key != 'e' && key != 'q');
 
 	waveInClose(hWaveIn);
@@ -168,14 +195,18 @@ void	Build_Sinewaves(int key_id, short *d, int N)
 	int		div_i;
 	int amplelify = 5000;
 	for (int i = 0; i < N; i++) {
-		d[i] = (short)(amplelify *sin(2 * M_PI * (key_freq[key_id] / Samplerate) * i + phs));
-		//d[i] += (short)(amplelify *sin(2 * M_PI * (key_freq[key_id + 2] / Samplerate) * i + phs));
+		d[i] = (short)(amplelify *sin(2 * M_PI * (/*key_freq[key_id]*/ freq / Samplerate) * i + phs));
+		if (har) {
+			d[i] += (short)(amplelify *sin(2 * M_PI * (key_freq[key_id + 2] / Samplerate) * i + phs));
+			d[i] += (short)(amplelify *sin(2 * M_PI * (key_freq[key_id + 4] / Samplerate) * i + phs));
+		}
 	}
 
 	phs = 2 * M_PI*(key_freq[key_id] / Samplerate)*N + phs;
 	div_f = phs / (M_PI * 2);
 	div_i = (int)div_f;
 	phs = phs - div_i * M_PI * 2;
+	
 }
 
 double	Correlation(short *x, short *y, int N, int key_id)
@@ -183,7 +214,13 @@ double	Correlation(short *x, short *y, int N, int key_id)
 	int		max_lag, i, j;
 	double	mx, my, sx, sy, corl, max_corl;
 
-	max_lag = Samplerate / key_freq[key_id];
+	max_lag = Samplerate / freq;/*key_freq[key_id];*/
+
+	/*FILE *fpa = fopen("debug.csv", "w");
+	for (int i = 0; i < max_lag+1; ++i) {
+		fprintf(fpa, "%d\n", out[i]);
+	}
+	fclose(fpa);*/
 
 	for (i = 0, max_corl = 0; i < max_lag; i++) { //max_lag : 두 신호의 phase가 어긋나있는 경우를 보상하기위해
 		mx = my = sx = sy = corl = 0.;
